@@ -16,6 +16,8 @@ permissions:
 jobs:
   test-and-provision:
     runs-on: ubuntu-latest
+    outputs:
+      acr_endpoint: ${{ steps.provision.outputs.acr_endpoint }}
     env:
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
@@ -49,7 +51,10 @@ jobs:
         shell: pwsh
 
       - name: Provision Infrastructure
-        run: azd provision --no-prompt
+        id: provision
+        run: |
+          azd provision --no-prompt
+          echo "acr_endpoint=$(azd env get-value AZURE_CONTAINER_REGISTRY_ENDPOINT)" >> "$GITHUB_OUTPUT"
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
@@ -82,3 +87,4 @@ jobs:
         run: azd deploy --no-prompt
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AZURE_CONTAINER_REGISTRY_ENDPOINT: ${{ needs.test-and-provision.outputs.acr_endpoint }}
