@@ -1,45 +1,23 @@
+"""In-memory cache for on-demand usage series (non-seeded monthly_kwh values).
+
+Locations, tariffs, seeded price/usage series now live in Postgres --
+see app.repositories. This cache only covers the user-chosen (building_type,
+monthly_kwh) combinations that fall outside what's seeded in the DB, since
+those are generated on the fly and there's no reason to recompute per
+request for the life of the process.
+"""
+
 from __future__ import annotations
 
-from app.data.locations import LOCATIONS
-from app.data.tariffs import build_tariffs
-from app.models.domain import Location
-from app.services.prices import generate_hourly_prices
 from app.services.usage import generate_hourly_usage
 
-CACHE = {"prices": {}, "usage": {}}
+_USAGE_CACHE: dict[tuple[str, str, float], list[float]] = {}
 
 
-def _to_location(raw: dict) -> Location:
-    return Location(
-        id=raw["id"],
-        city=raw["city"],
-        state=raw["state"],
-        iso=raw["iso"],
-        utility=raw["utility"],
-        price_level=raw["price_level"],
-        map_x=raw["map_x"],
-        map_y=raw["map_y"],
-    )
-
-
-def warm_cache() -> None:
-    for raw in LOCATIONS:
-        location = _to_location(raw)
-        CACHE["prices"][location.id] = generate_hourly_prices(location.iso, location.id)
-        CACHE["usage"].setdefault(location.id, {})
-        for building_name in ["SmallOffice", "Retail", "SmallHotel", "Warehouse", "MidriseApartment"]:
-            CACHE["usage"][location.id][building_name] = {}
-
-
-def get_location_by_id(location_id: str) -> Location | None:
-    for raw in LOCATIONS:
-        if raw["id"] == location_id:
-            return _to_location(raw)
-    return None
-
-
-def get_tariffs_for_location(location_id: str):
-    location = get_location_by_id(location_id)
-    if location is None:
-        return []
-    return build_tariffs(location)
+def get_or_generate_usage(location_id: str, building_type: str, monthly_kwh: float) -> list[float]:
+    key = (location_id, building_type, monthly_kwh)
+    cached = _USAGE_CACHE.get(key)
+    if cached is None:
+        cached = generate_hourly_usage(building_type, monthly_kwh, location_id)
+        _USAGE_CACHE[key] = cached
+    return cached

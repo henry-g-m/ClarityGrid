@@ -1,30 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
+from app import repositories
 from app.data.iso_profiles import ISO_PROFILES
-from app.data.locations import LOCATIONS
-from app.data.tariffs import build_tariffs
-from app.models.domain import Location
 from app.models.schemas import CalculateCustomEconomyRequest
 
 router = APIRouter()
-
-
-def _location_from_id(location_id: str) -> Location | None:
-    for raw in LOCATIONS:
-        if raw["id"] == location_id:
-            return Location(
-                id=raw["id"],
-                city=raw["city"],
-                state=raw["state"],
-                iso=raw["iso"],
-                utility=raw["utility"],
-                price_level=raw["price_level"],
-                map_x=raw["map_x"],
-                map_y=raw["map_y"],
-            )
-    return None
 
 
 @router.post("/ecservice/login")
@@ -43,28 +25,30 @@ async def get_operators():
 
 @router.get("/ecservice/api/distributor")
 async def get_distributor(zipcode: str | None = None, operator_id: str | None = None):
+    locations = repositories.list_locations()
     if zipcode:
-        location = next((item for item in LOCATIONS if item["id"] in {"nyc", "bos", "lax", "hou", "chi", "aus", "mci", "phl"}), LOCATIONS[0])
-        return {"distributor": {"id": location["id"], "zipcode": zipcode, "operator_id": operator_id or location["iso"], "name": location["utility"]}}
+        location = locations[0]
+        return {"distributor": {"id": location.id, "zipcode": zipcode, "operator_id": operator_id or location.iso, "name": location.utility}}
     if operator_id:
-        location = next((item for item in LOCATIONS if item["iso"] == operator_id), LOCATIONS[0])
-        return {"distributor": {"id": location["id"], "operator_id": operator_id, "name": location["utility"]}}
+        location = next((item for item in locations if item.iso == operator_id), locations[0])
+        return {"distributor": {"id": location.id, "operator_id": operator_id, "name": location.utility}}
     return {"distributor": None}
 
 
 @router.get("/ecservice/api/distributors")
 async def get_distributors(operator_id: str | None = None):
-    filtered = LOCATIONS if operator_id is None else [item for item in LOCATIONS if item["iso"] == operator_id]
-    return {"distributors": [{"id": item["id"], "name": item["utility"], "operator_id": item["iso"], "city": item["city"], "state": item["state"]} for item in filtered]}
+    locations = repositories.list_locations()
+    filtered = locations if operator_id is None else [item for item in locations if item.iso == operator_id]
+    return {"distributors": [{"id": item.id, "name": item.utility, "operator_id": item.iso, "city": item.city, "state": item.state} for item in filtered]}
 
 
 @router.get("/ecservice/api/distributors/tariffs")
 async def get_distributor_tariffs(id: str | None = None):
     location_id = id or "nyc"
-    location = _location_from_id(location_id)
+    location = repositories.get_location(location_id)
     if location is None:
         raise HTTPException(status_code=404, detail="Location not found")
-    tariffs = build_tariffs(location)
+    tariffs = repositories.list_tariffs(location_id)
     return {
         "distributor": {"id": location.id, "name": location.utility},
         "tariffs": [
