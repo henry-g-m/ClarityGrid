@@ -1,0 +1,151 @@
+{
+	"info": {
+		"name": "ClarityGrid - Real API",
+		"description": "Sample requests for the 'real' backend API (app/routers/real_api.py) exposed under /ecservice. Set the `base_url` collection variable to point at your running backend (defaults to http://localhost:8000).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "operator_id",
+			"value": "nyiso",
+			"type": "string"
+		},
+		{
+			"key": "distributor_id",
+			"value": "nyc",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/health",
+					"host": ["{{base_url}}"],
+					"path": ["health"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Login",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/ecservice/login",
+					"host": ["{{base_url}}"],
+					"path": ["ecservice", "login"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Operators",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/ecservice/api/operators",
+					"host": ["{{base_url}}"],
+					"path": ["ecservice", "api", "operators"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Distributor (by zipcode)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/ecservice/api/distributor?zipcode=10001",
+					"host": ["{{base_url}}"],
+					"path": ["ecservice", "api", "distributor"],
+					"query": [
+						{ "key": "zipcode", "value": "10001" }
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Distributor (by operator_id)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/ecservice/api/distributor?operator_id={{operator_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["ecservice", "api", "distributor"],
+					"query": [
+						{ "key": "operator_id", "value": "{{operator_id}}" }
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Distributors",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/ecservice/api/distributors?operator_id={{operator_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["ecservice", "api", "distributors"],
+					"query": [
+						{ "key": "operator_id", "value": "{{operator_id}}" }
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Distributor Tariffs",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/ecservice/api/distributors/tariffs?id={{distributor_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["ecservice", "api", "distributors", "tariffs"],
+					"query": [
+						{ "key": "id", "value": "{{distributor_id}}" }
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Calculate Custom Economy",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"usage_by_month\": [3200, 3100, 3400, 3600, 4000, 4500, 4800, 4700, 4200, 3700, 3300, 3200],\n  \"distributor_tariff_id\": \"standard\",\n  \"price_node_id\": null,\n  \"battery_duration\": null,\n  \"battery_id\": null,\n  \"timezone\": \"America/New_York\"\n}",
+					"options": {
+						"raw": { "language": "json" }
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/ecservice/calculate_custom_economy",
+					"host": ["{{base_url}}"],
+					"path": ["ecservice", "calculate_custom_economy"]
+				}
+			},
+			"response": []
+		}
+	]
+}
