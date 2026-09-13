@@ -1,9 +1,13 @@
-# Run when commits are pushed to main
+# Tests run on PRs targeting main and on pushes to main.
+# Provisioning + deployment only run on push to main (i.e. after a PR merges) --
+# main is branch-protected to require a PR, so a "push to main" here means a
+# merge landed, not someone pushing directly.
 on:
   workflow_dispatch:
   push:
-    # Run when commits are pushed to mainline branch (main or master)
-    # Set this to the mainline branch you are using
+    branches:
+      - main
+  pull_request:
     branches:
       - main
 
@@ -14,16 +18,8 @@ permissions:
   contents: read
 
 jobs:
-  test-and-provision:
+  test:
     runs-on: ubuntu-latest
-    outputs:
-      acr_endpoint: ${{ steps.provision.outputs.acr_endpoint }}
-    env:
-      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
-      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,6 +34,22 @@ jobs:
           uv run pytest
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  provision:
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      acr_endpoint: ${{ steps.provision.outputs.acr_endpoint }}
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install azd
         uses: Azure/setup-azd@v2
@@ -59,7 +71,8 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
   deploy:
-    needs: test-and-provision
+    if: github.event_name == 'push'
+    needs: provision
     runs-on: ubuntu-latest
     environment: dev
     env:
@@ -87,4 +100,4 @@ jobs:
         run: azd deploy --no-prompt
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          AZURE_CONTAINER_REGISTRY_ENDPOINT: ${{ needs.test-and-provision.outputs.acr_endpoint }}
+          AZURE_CONTAINER_REGISTRY_ENDPOINT: ${{ needs.provision.outputs.acr_endpoint }}
