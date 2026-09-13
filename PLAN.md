@@ -262,10 +262,7 @@ well-trodden path, not a bespoke setup).
 | Provisioning & CI/CD | **Azure Developer CLI (`azd`)** + GitHub Actions | `azd` is built for exactly this "prototype in a repo → deployed on Azure" flow: `azd init`, `azd up` provisions everything via Bicep and deploys the code in one command, and `azd pipeline config` wires up GitHub Actions for you. This is also a good fit for a Claude-Code-driven workflow since the infra is declarative (Bicep in `infra/`) rather than manual portal clicks. |
 | Frontend hosting (Phase 2, not now) | Azure Static Web Apps | Once the UI moves out of the artifact into its own app, this is the natural pairing — static hosting + CDN, easy custom domain, separate from the API. |
 
-**Region: East US.** `azd up` will prompt for this at provision time; that's
-the answer to give it. (If East US hits a capacity constraint for a specific
-resource — occasionally happens with Container Apps or Postgres Flexible
-Server on new subscriptions — East US 2 is the fallback, same pricing tier.)
+**Region: East US 2.** `azd up` will prompt for this at provision time; 
 
 **IaC provider: Bicep** (decided — Terraform was considered and set aside
 for now; azd supports it as a swap-in later via `infra: provider: terraform`
