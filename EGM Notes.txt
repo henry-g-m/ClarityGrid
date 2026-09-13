@@ -13,6 +13,11 @@ Current row counts in the live DB (claritygrid on claritygrid-pg-dev)
 │ usage_series │ 350,400 │ 8 locations × 5 building types × 8,760 hours/year, at a fixed 3,000 kWh/month per building type │
 └──────────────┴─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-= Startup =
+= Backend Startup =
 uv run pytest                # sanity check (hits the live DB, see earlier note)
 uv run uvicorn app.main:app --reload
+
+= UI Startup =
+cd ui_prototype
+npm install
+npm run dev
