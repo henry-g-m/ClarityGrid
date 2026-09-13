@@ -1,4 +1,4 @@
-from app.models.domain import Charge, ChargeTier, Location, Tariff, TariffCharges
+from app.models.domain import Charge, ChargeTier, Location, Tariff, TariffCharges, TimePeriod
 
 
 def build_tariffs(location: Location) -> list[Tariff]:
@@ -24,7 +24,7 @@ def build_tariffs(location: Location) -> list[Tariff]:
                     Charge(
                         basis="kwh",
                         range=[ChargeTier(cost=0.19 * p, from_=0.0)],
-                        time_period={"hours": [14, 15, 16, 17, 18, 19], "days_of_week": [2, 3, 4, 5, 6]},
+                        time_period=TimePeriod(hours=[14, 15, 16, 17, 18, 19], days_of_week=[2, 3, 4, 5, 6]),
                     ),
                     Charge(basis="kwh", range=[ChargeTier(cost=0.075 * p, from_=0.0)]),
                 ],

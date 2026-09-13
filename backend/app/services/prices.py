@@ -18,7 +18,8 @@ def _mulberry32(seed: int):
         state = (state + 0x6D2B79F5) & 0xFFFFFFFF
         t = ((state ^ (state >> 15)) * (1 | state)) & 0xFFFFFFFF
         t = (t + ((t ^ (t >> 7)) * (61 | t))) & 0xFFFFFFFF
-        return ((t ^ (t >> 14)) >>> 0) / 4294967296
+        value = (t ^ (t >> 14)) & 0xFFFFFFFF
+        return value / 4294967296
 
     return next_float
 
