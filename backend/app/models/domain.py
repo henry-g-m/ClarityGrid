@@ -21,6 +21,7 @@ class Charge:
     range: list[ChargeTier] = field(default_factory=list)
     time_period: TimePeriod | None = None
     ndx: bool = False
+    feedin_rate: float = 0.0
 
 
 @dataclass

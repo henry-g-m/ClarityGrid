@@ -48,6 +48,8 @@ def _charge_from_json(data: dict | None) -> Charge | None:
         basis=data.get("basis", "kwh"),
         range=[ChargeTier(cost=tier["cost"], from_=tier["from"]) for tier in data["range"]],
         time_period=None if tp is None else TimePeriod(hours=tp.get("hours"), days_of_week=tp.get("days_of_week")),
+        ndx=data.get("ndx", False),
+        feedin_rate=data.get("feedin_rate", 0.0),
     )
 
 
