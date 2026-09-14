@@ -1,8 +1,12 @@
 # ClarityGrid Client Backend — Plan
 
-Status: draft for review. No code yet — this is the architecture and sequencing
-document. Built to be read by both humans and Claude Code sessions that will
-implement it.
+Status: **mostly implemented and deployed.** Phases 1–4 below are done (with
+some deviations from what was originally planned — called out inline and
+summarized in [§11](#11-gaps-vs-this-plan-as-of-2026-09-14)). Frontend
+deployment (originally deferred past this plan's horizon) has also been
+pulled forward and is now live. This document is kept as the historical
+design record; where reality diverged, the divergence is noted rather than
+silently rewritten.
 
 ## 1. Decisions made so far
 
@@ -27,26 +31,33 @@ back on any of these and I'll revise before we start building.
      Client UI
      itself (simpler shapes, does in one call what the real API needs several
      calls for).
-2. **Data generation: pre-generate + cache.** The 8 synthetic locations'
-   price series are generated once at startup and cached in memory (they're
-   deterministic — same seed in, same series out — so there's no reason to
-   recompute per request). Usage series depend on (building type, monthly
-   kWh) which is user-chosen, so those are generated on demand and cached by
-   that key for the life of the process.
+2. **Data generation: pre-generate + cache.** ~~The 8 synthetic locations'
+   price series are generated once at startup and cached in memory~~ **As
+   built, this changed under Phase 4:** locations, tariffs, and price series
+   are now seeded into Postgres once (`backend/scripts/seed_db.py`) and read
+   from the DB per-request (`app/repositories.py`) rather than generated at
+   startup. Usage series still depend on user-chosen `(building_type,
+   monthly_kwh)`; the 5 default combinations are seeded too, and anything
+   else is generated on demand and cached in-process for the life of the
+   process (`app/services/cache.py`) — that part of the original decision
+   held.
 3. **Auth: none, for now.** This is a prototype behind your own Azure
    resources, not a multi-tenant public API. I'm designing the route
    structure so an API-key header or the real login/session-cookie mock can
-   be dropped in later without reshaping anything.
+   be dropped in later without reshaping anything. **Still true as built —
+   no auth exists anywhere in the deployed app.**
 
 ## 3. Scope of this backend
 
-**Reference implementation:** `reference/claritygrid-client-app.jsx` (the
-current Claude.ai artifact, renamed from its working title "Loadpoint" — the
-component inside is now `ClarityGridClientApp`). Treat it as the source of
-truth for exact constants, formulas, and behavior — the prose below
-describes what each piece does, but the file has the actual seeded values
-and the battery/tariff math as debugged and validated. Port from it, don't
-re-derive it from this description.
+**Reference implementation:** `ui_prototype/claritygrid-client-app.jsx` (the
+former Claude.ai artifact, working title "Loadpoint" — the component inside
+is `ClarityGridClientApp`; this plan originally called the file
+`reference/claritygrid-client-app.jsx`, but it lives under `ui_prototype/` in
+the actual repo, and — see §11 — is now also the live frontend, not just a
+reference). Treat it as the source of truth for exact constants, formulas,
+and behavior — the prose below describes what each piece does, but the file
+has the actual seeded values and the battery/tariff math as debugged and
+validated. Port from it, don't re-derive it from this description.
 
 Port the calculation engine and synthetic dataset that currently live as
 JavaScript inside the ClarityGrid Client React artifact into a standalone Python
@@ -67,62 +78,72 @@ This is a faithful port, not a rewrite — the numbers the backend produces
 should match what the artifact currently computes client-side, so swapping
 the UI over to it is a wiring change, not a behavior change.
 
-## 4. Proposed project structure
+## 4. Project structure (as built)
+
+The structure below reflects what's actually in the repo today, not the
+original proposal (mainly: real DB access modules exist under `backend/app/`,
+service filenames are shorter than proposed, and `frontend/` became
+`ui_prototype/` with a much smaller stack than §6b describes — see §11).
 
 ```
-claritygrid-client/
-├── azure.yaml                  # azd project descriptor
-├── infra/                      # Bicep, provisioned by azd
-│   ├── main.bicep
-│   └── ...
+ClarityGrid/
+├── azure.yaml                  # azd project descriptor (services: backend, frontend)
+├── infra/
+│   ├── main.bicep              # Log Analytics, Container Apps env + app, ACR, Static Web App
+│   └── main.parameters.json
+├── .github/workflows/
+│   └── azure-dev.yml           # test -> provision -> deploy (push to main only)
 ├── backend/
 │   ├── pyproject.toml
 │   ├── Dockerfile
 │   ├── app/
-│   │   ├── main.py             # FastAPI() instance, CORS, router mounting, startup cache warm-up
-│   │   ├── config.py           # pydantic-settings: env vars, DB URL, CORS origins
+│   │   ├── main.py             # FastAPI() instance, CORS, router mounting, lifespan (init/close DB pool)
+│   │   ├── config.py           # env vars: app name, environment, CORS origins, DATABASE_URL
+│   │   ├── db.py                # psycopg_pool connection pool (init_pool/close_pool/get_pool)
+│   │   ├── repositories.py      # DB reads: locations, tariffs, price_series, usage_series
 │   │   ├── data/
-│   │   │   ├── iso_profiles.py       # ISO_PROFILES
-│   │   │   ├── locations.py          # LOCATIONS (8 synthetic locations)
-│   │   │   ├── building_profiles.py  # BUILDING_SHAPES
-│   │   │   └── tariffs.py            # build_tariffs(location) -> list[Tariff]
+│   │   │   ├── iso_profiles.py       # ISO_PROFILES (used at runtime by services/prices.py)
+│   │   │   ├── locations.py          # LOCATIONS — seed data only now, read by scripts/seed_db.py
+│   │   │   ├── building_profiles.py  # BUILDING_SHAPES (used at runtime by services/usage.py)
+│   │   │   └── tariffs.py            # build_tariffs(location) -> list[Tariff] — seed data only now
 │   │   ├── models/
 │   │   │   ├── domain.py       # dataclasses: Location, Tariff, Charge, TimePeriod...
 │   │   │   └── schemas.py      # Pydantic request/response models for the routes
 │   │   ├── services/
-│   │   │   ├── price_gen.py    # generate_hourly_prices()
-│   │   │   ├── usage_gen.py    # generate_hourly_usage()
+│   │   │   ├── prices.py       # generate_hourly_prices(), the calendar (CAL), the PRNG
+│   │   │   ├── usage.py        # generate_hourly_usage()
 │   │   │   ├── calc_engine.py  # calculate_bill(), fixed_price_bill(), evaluate_tiered_range()
 │   │   │   ├── battery.py      # simulate_battery(), find_shave_ceiling()
-│   │   │   └── cache.py        # in-memory series cache
+│   │   │   └── cache.py        # in-memory cache for on-demand (non-seeded) usage series
 │   │   └── routers/
 │   │       ├── real_api.py     # /ecservice/* (login, distributor, distributors/tariffs, calculate_custom_economy, operators)
 │   │       └── app_api.py      # /api/* (locations, bill, compare, building-types)
+│   ├── scripts/
+│   │   ├── schema.sql          # locations, tariffs, price_series, usage_series tables
+│   │   └── seed_db.py          # truncates + reloads all 4 tables from data/ + the generators above
+│   ├── postman/
+│   │   └── ClarityGrid_RealAPI.postman_collection.json  # sample requests against /ecservice/*
 │   └── tests/
-│       ├── test_calc_engine.py
-│       ├── test_battery.py
-│       └── test_routes.py
-└── frontend/                    # Phase 2 — ClarityGrid Client UI moved out of the artifact
+│       ├── test_calc_engine.py  # price/usage generation shape, bill calc shape+total>0
+│       └── test_routes.py       # /api/locations, /api/bill, /ecservice/api/operators (needs live DB)
+└── ui_prototype/                # the live frontend — see §11, this is NOT the §6b stack
     ├── package.json
-    ├── vite.config.ts
-    ├── tailwind.config.ts
+    ├── vite.config.js
+    ├── index.html
+    ├── write-build-env.mjs      # prebuild hook: writes VITE_API_BASE_URL from $BACKEND_URL
+    ├── claritygrid-client-app.jsx  # the component itself — still the source-of-truth reference
     └── src/
-        ├── main.tsx
-        ├── App.tsx
-        ├── components/          # GridMap, Panel, KpiCard, Toggle, SelectField, SliderField —
-        │                        # ported from the artifact's inline-styled components
-        ├── lib/
-        │   ├── api.ts           # TanStack Query hooks wrapping fetches to /api/*
-        │   └── format.ts        # fmtUSD, fmtKwh, etc.
-        └── styles/
-            └── globals.css      # Tailwind base + the IBM Plex font imports
+        └── main.jsx
 ```
 
-## 5. Data model (Python data structures, in-memory for now)
+## 5. Data model
 
-Plain dataclasses, not an ORM yet — the ORM layer arrives in Phase 4 when
-Postgres comes in, and at that point these dataclasses become the shape that
-gets read out of the DB, not the source of truth.
+Plain dataclasses (`backend/app/models/domain.py`), unchanged from the
+original design. The plan originally framed these as "in-memory for now,
+becomes the DB read-shape in Phase 4" — Phase 4 has happened, and this is
+exactly what occurred: `repositories.py` reads rows out of Postgres and
+constructs these same dataclasses, so nothing downstream (calc engine,
+routers) needed to change shape.
 
 ```python
 @dataclass
@@ -169,9 +190,10 @@ class Location:
 
 `ISO_PROFILES` and `BUILDING_SHAPES` stay as plain dicts (they're lookup
 tables, not entities with behavior) — same shape as the artifact's JS
-versions.
+versions, and still read directly from `app/data/` at runtime (unlike
+locations/tariffs, these were never moved into Postgres — see §11).
 
-## 6. API design
+## 6. API design (as built — matches this section as originally written)
 
 ### `/ecservice/*` — real-API-shaped core
 
@@ -184,6 +206,27 @@ versions.
 | `GET /ecservice/api/distributors/tariffs?id=` | Distributor Tariffs (detailed) | full charge structure, matches `02-tariff-api.md` shape |
 | `POST /ecservice/calculate_custom_economy` | Calculate Custom Economy | accepts the real payload shape (`usage_by_month`, `distributor_tariff_id`, `price_node_id`, `battery_duration`, `battery_id`, etc.), returns the real response shape (`retailMonthlyCosts`, `wholesaleMonthlyCosts`, etc.) |
 
+`calculate_custom_economy` was a flat-rate stub (`sum(usage) * 0.14`, ignoring
+the tariff entirely) until 2026-09-14, when it was wired to the real
+`repositories.get_tariff` + `calc_engine.calculate_bill` +
+`battery.simulate_battery` — same engine `/api/bill` uses. Two real
+deviations from the documented real-API shape, both explicit in the
+response's `warning` field:
+- **`distributor_id` is required**, unlike the real API (where it's
+  documented as "not required") — this prototype's tariff ids (`standard`,
+  `tou`, `demand`) aren't globally unique the way the real API's numeric
+  tariff-detail ids are, so the distributor is needed to know which
+  location's tariff to resolve.
+- **No per-node battery catalog** — `battery_id`/"auto-select by duration"
+  always resolves to one fixed 15kW representative unit, since there's no
+  `availableBatteries` data source here. Distribution and Energy charges are
+  also merged into one (matching this prototype's simplified 3-category
+  tariff model, not the real API's 4), so `retailMonthlyDistributionCosts`/
+  `distributionChargeBasis` are always zero/empty.
+
+A Postman collection with sample requests against all of these lives at
+`backend/postman/ClarityGrid_RealAPI.postman_collection.json`.
+
 ### `/api/*` — convenience layer for the ClarityGrid Client UI
 
 | Method & path | Purpose |
@@ -192,13 +235,39 @@ versions.
 | `GET /api/building-types` | building type keys + display labels |
 | `GET /api/locations/{id}/tariffs` | tariffs at a location, simplified shape + quick annual estimate |
 | `GET /api/locations/{id}/prices?year=2025` | full 8760-point hourly price array |
-| `POST /api/bill` | `{location_id, building_type, monthly_kwh, tariff_id, battery?, fixed_rate?}` → full monthly + annual breakdown (retail, wholesale, and battery-adjusted if requested) — this is the one call the UI will use for its main view |
+| `POST /api/bill` | `{location_id, building_type, monthly_kwh, tariff_id, battery?, fixed_rate?}` → full monthly + annual breakdown (retail, wholesale, and battery-adjusted if requested) — this is the one call the UI uses for its main view |
 | `POST /api/compare` | two `{location_id, tariff_id}` pairs, same usage profile → both bills side by side |
 
-## 6b. Frontend stack (Phase 2)
+`battery`/`fixed_rate` on `/api/bill` were part of the original schema but
+sat unused until the UI wiring work — they're now live (see
+`app/routers/app_api.py`), applying `services/battery.simulate_battery` and
+`services/calc_engine.fixed_price_bill` before computing the returned bill.
+`/api/compare` does **not** apply battery/fixed-rate adjustments on either
+side — that was true of the original artifact's comparison too, not a
+regression.
 
-You said React plus fancy addons, so here's the concrete stack — flag
-anything you'd rather swap:
+`app/services/calc_engine.py` now also implements four more bases from
+`05-basis-reference.md` beyond fixed/kwh/peak_kw/TOU: **index pricing**
+(`ndx: true` on an energy charge — the hourly wholesale price is used
+directly instead of a fixed $/kWh rate), **feed-in credit** (`feedin_rate`
+on an energy charge — negative/exported usage is credited at that rate
+instead of billed at the normal tier), **`daily_kwh_tr`** (energy tiers
+reset each day instead of accumulating over the month), and
+**`daily_peak_kw`/`daily_peak_kw_tr`** (demand charge is the sum of each
+day's peak × rate, instead of one charge against the month's single peak).
+None of the 8 seeded locations' 3 tariff templates use these yet (dataset
+scope is still frozen, per §10) — they're engine capability, covered by
+`backend/tests/test_tariff_basis.py`, exercised with ad-hoc `Tariff`/`Charge`
+objects rather than seed data. Ratchets, coincident peak, and block-factor
+tiering remain unimplemented — see §11.
+
+## 6b. Frontend stack (Phase 2) — **planned, not what was built**
+
+You said React plus fancy addons, so here's the concrete stack that was
+planned — see [§11](#11-gaps-vs-this-plan-as-of-2026-09-14) for what
+actually shipped instead (a much smaller Vite+JS scaffold directly around
+the existing artifact component, deliberately, to keep the port a thin
+wiring change rather than a rewrite):
 
 | Piece | Choice | Why |
 |---|---|---|
@@ -218,107 +287,151 @@ changes.
 
 ## 7. Database — now vs. later
 
-**Now:** nothing. Everything above is generated in-process and cached in
-memory. Restarting the server regenerates it deterministically from the same
-seeds, so there's no data-loss concern at this stage.
+**As built (this happened — Phase 4 is done):** PostgreSQL, standard, no
+extensions, matching the plan below almost exactly:
 
-**Later (Phase 4): PostgreSQL, standard, no extensions.** Two kinds of
-tables, one database:
-
-- Relational: `locations`, `distributors`, `tariffs`, `tariff_charges` — small,
-  low-write, exactly what Postgres is for.
+- Relational: `locations`, `tariffs` (charges stored as JSONB, decoded via
+  `repositories._charge_from_json`) — small, low-write.
 - Time-series: `price_series(location_id, ts, price)`,
-  `usage_series(location_id, building_type, ts, kwh)` — bigger, append-mostly.
-  At the scale this app is likely to reach (dozens of locations × a handful
-  of years × hourly = low millions of rows), plain Postgres with a composite
-  index on `(location_id, ts)` and monthly partitioning if it gets large is
-  genuinely enough — you don't need a specialized time-series engine to get
-  good performance here.
+  `usage_series(location_id, building_type, ts, kwh)` — seeded for the 5
+  default building types at the default monthly kWh; anything else (a
+  different `monthly_kwh` the user picks) is generated on demand by
+  `services/usage.py` and cached in-process, not written back to the DB.
+- `backend/scripts/schema.sql` defines the tables; `backend/scripts/seed_db.py`
+  truncates and reloads all of them from `app/data/` + the price/usage
+  generators, so the DB and the in-process calc engine can never drift.
 
-One correction to what I told you last time: I'd said Azure's managed
-Postgres doesn't support the TimescaleDB extension — that's wrong, I checked
-and Azure Database for PostgreSQL Flexible Server does support TimescaleDB
-(Apache-2 edition). So "standard Postgres" here is a genuine choice, not one
-forced by an Azure limitation — and it's the right one at this scale. Worth
-revisiting only if the dataset grows by orders of magnitude (many more
-locations, sub-hourly resolution, multi-year history) or you want built-in
-retention/compression policies — Timescale is a config change away on the
-same Azure service if that day comes, not a migration to a different one.
+**What did not happen, and is a real gap:** no migration tool (Alembic or
+otherwise) — see §11. Schema changes today mean hand-editing `schema.sql`
+and re-running `seed_db.py`, which is destructive (truncates everything).
+That's fine for a prototype seeded from deterministic generators, but would
+not survive real user-entered data.
 
-## 8. Azure services (prototype-sized)
+One correction from the original plan text: Azure's managed Postgres *does*
+support the TimescaleDB extension (Azure Database for PostgreSQL Flexible
+Server supports the Apache-2 edition) — standard Postgres here is a genuine
+choice, not an Azure limitation, and remains the right one at this scale.
 
-Verified current as of this plan (Microsoft publishes official `azd`
-templates for this exact combination — FastAPI + Postgres Flexible Server —
-on both of the compute options below, which is a good sign this is a
-well-trodden path, not a bespoke setup).
+## 8. Azure services (as built)
 
-| Concern | Recommendation | Why |
-|---|---|---|
-| Compute | **Azure Container Apps** (decided) | Serverless containers, scale-to-zero (cheap when you're not actively using the prototype), simple `azd up` deploy, room to grow into multiple services (e.g. a worker later) without re-platforming. Backend ships as a Docker image. |
-| Database | **Azure Database for PostgreSQL – Flexible Server**, Burstable tier (B1ms) | Managed, cheap at prototype scale, standard Postgres as decided above. |
-| Container registry | Azure Container Registry | Holds the built FastAPI Docker image that Container Apps pulls from. |
-| Secrets | Azure Key Vault | DB connection string and any future API keys, referenced by the container app instead of sitting in plain env vars. |
-| Observability | Application Insights (via Azure Monitor OpenTelemetry) — **implemented**, see [`docs/OPS-0001-observability.md`](docs/OPS-0001-observability.md) | Logging, distributed tracing, and metrics, exported to a workspace-based Application Insights resource on the same Log Analytics workspace the Container Apps environment already provisions. |
-| Provisioning & CI/CD | **Azure Developer CLI (`azd`)** + GitHub Actions | `azd` is built for exactly this "prototype in a repo → deployed on Azure" flow: `azd init`, `azd up` provisions everything via Bicep and deploys the code in one command, and `azd pipeline config` wires up GitHub Actions for you. This is also a good fit for a Claude-Code-driven workflow since the infra is declarative (Bicep in `infra/`) rather than manual portal clicks. |
-| Frontend hosting (Phase 2, not now) | Azure Static Web Apps | Once the UI moves out of the artifact into its own app, this is the natural pairing — static hosting + CDN, easy custom domain, separate from the API. |
+| Concern | Planned | As built | Notes |
+|---|---|---|---|
+| Compute | Azure Container Apps | ✅ done | `infra/main.bicep`: `backendApp`, scale-to-zero (0–2 replicas) |
+| Frontend hosting | Azure Static Web Apps (Phase 2, "not now") | ✅ done, pulled forward | `staticWebApp` resource, Free tier, deployed via `azd`'s `staticwebapp` host support |
+| Database | Azure Database for PostgreSQL Flexible Server, Burstable (B1ms) | ⚠️ done, but **not in this IaC** | The Postgres server (`claritygrid-pg-dev`) lives in the same resource group (`rg-claritygrid-dev`) but was provisioned outside `infra/main.bicep` — `databaseUrl` is passed in as a secure param/GitHub secret, not created by this template. See §11. |
+| Container registry | Azure Container Registry | ✅ done | `containerRegistry`, Basic SKU |
+| Secrets | Azure Key Vault | ❌ not built | `DATABASE_URL` is a plain Container Apps secret (`secrets: [{name: 'database-url', ...}]`), not Key Vault-backed. Works, but not what was planned. See §11. |
+| Observability | Application Insights (Azure Monitor OpenTelemetry) | ✅ done, see [`docs/OPS-0001-observability.md`](docs/OPS-0001-observability.md) | Logging, distributed tracing, and metrics (`app/observability.py`), exported to a workspace-based Application Insights resource `infra/main.bicep` provisions on the same Log Analytics workspace the Container Apps environment already uses. |
+| Provisioning & CI/CD | Azure Developer CLI (`azd`) + GitHub Actions | ✅ done | `.github/workflows/azure-dev.yml`: test (pytest + frontend build) → provision → deploy (manually-approved `dev` environment gate), on push to `main` |
 
-**Region: East US 2.** `azd up` will prompt for this at provision time; 
+**Region: East US 2** (this plan previously contradicted itself — §8 said
+East US 2, §10 said East US; the live environment's `AZURE_LOCATION` is
+`eastus2`, which is also one of the small set of regions that support
+Static Web Apps, so East US 2 is confirmed correct).
 
-**IaC provider: Bicep** (decided — Terraform was considered and set aside
-for now; azd supports it as a swap-in later via `infra: provider: terraform`
-in `azure.yaml`, but it'd mean hand-porting the Bicep resources to `.tf`
-rather than a straight conversion, and azd's Terraform support has stayed
-in beta for a while. Revisit only if a concrete reason comes up.)
+**IaC provider: Bicep** (decided — unchanged).
 
-**Concrete starting point** (a real, existing Microsoft/Azure-Samples `azd`
-template matching this stack — FastAPI + Postgres Flexible Server +
-Container Apps — closely enough to scaffold from rather than starting from
-a blank repo): `azure-fastapi-postgres-addon-aca`.
+## 9. Phased plan — status
 
-## 9. Phased plan
-
-- **Phase 1 — Backend skeleton (local only).** Port the JS engine to Python
-  1:1 (data structures + calc engine + battery sim), hybrid routes, pytest
-  coverage mirroring the sanity checks we already validated in the JS
-  prototype (annual usage conservation, tariff totals, battery savings
-  sign/magnitude across tariff types). Runs locally via `uvicorn`, no Azure
-  yet.
-- **Phase 2 — Connect the UI.** Move the ClarityGrid Client React component out of
-  the artifact into `frontend/` (framework choice TBD, see open questions),
-  replace its client-side calc calls with `fetch`s to `/api/bill` etc. Run
-  both locally (two terminals or `docker-compose`).
-- **Phase 3 — Deploy the prototype.** `azd init` from the template above,
-  adjust the Bicep for our shape, `azd up`. Backend live on Container Apps,
-  Postgres provisioned but still unused (Phase 1's in-memory data still
-  backs the app).
-- **Phase 4 — Real persistence.** Postgres schema, Alembic migrations,
-  seed the relational tables from the current Python data structures, move
-  price/usage series into the time-series tables. Calc engine logic doesn't
-  change — only where the data comes from.
-- **Phase 5 — later.** Real auth, more tariff basis types (the full list in
-  `05-basis-reference.md` — right now only fixed/kwh/peak_kw/TOU are
-  implemented), more locations, Timescale if/when volume justifies it.
+- **Phase 1 — Backend skeleton (local only).** ✅ Done. Calc engine + battery
+  sim ported 1:1, hybrid routes, `uv run pytest` passes locally and in CI.
+- **Phase 2 — Connect the UI.** ✅ Done, differently than planned: the
+  artifact component moved to `ui_prototype/` (not `frontend/`) with a
+  minimal Vite+JS scaffold — not the TypeScript/Tailwind/shadcn/TanStack
+  Query/Framer Motion stack in §6b. Its client-side calc/generation code was
+  removed entirely in favor of `fetch`s to `/api/*`. See §11 for why and
+  what that leaves on the table.
+- **Phase 3 — Deploy the prototype.** ✅ Done, and expanded: backend is live
+  on Container Apps, *and* the frontend is live on Static Web Apps (originally
+  slated for later). Postgres is live too, but — unlike this phase's original
+  assumption of "unused in-memory data" — it's actively serving every
+  request, and it isn't part of this template's provisioning (see §8, §11).
+- **Phase 4 — Real persistence.** ✅ Done, differently than planned: schema +
+  seed script exist and are live, but there's no Alembic (or any) migration
+  tooling — `seed_db.py` is a truncate-and-reload script, not a migration
+  chain. Calc engine logic didn't change, as planned — only where the data
+  comes from.
+- **Phase 5 — later.** Partly started: fixed/kwh/peak_kw/TOU plus index
+  pricing, feed-in credit, and daily-tiered energy/demand bases are now
+  implemented (see §6, `test_tariff_basis.py`) — none of it wired into the
+  seeded dataset yet. Still open: real auth, ratchets/coincident-peak/
+  block-factor bases, more locations, Timescale if/when volume justifies it.
 
 ## 10. Resolved decisions
 
-- **Frontend:** React, via the stack in section 6b (Vite, TypeScript,
-  Tailwind, shadcn/ui, TanStack Query, Framer Motion).
+- **Frontend:** ~~React, via the stack in section 6b~~ **As built:** React,
+  via Vite + plain JS + inline styles + hand-rolled components + manual
+  `fetch`/`useEffect` — see §11 for the reasoning and what's missing versus
+  §6b.
 - **Dataset scope:** unchanged from the artifact — the same 8 locations, 5
-  building types, and 3 tariff templates. No expansion as part of this port;
-  more locations/tariffs/basis types are Phase 5.
-- **Azure region:** East US.
+  building types, and 3 tariff templates. No expansion has happened;
+  more locations/tariffs/basis types are still Phase 5.
+- **Azure region:** East US 2 (fixed contradiction with §8 — see above).
 - **Frontend hosting / CORS:** Azure Static Web Apps, default domain (no
-  custom domain for the prototype). One practical wrinkle: that default
-  domain (`https://<random-name>.azurestaticapps.net`) isn't known until the
-  Static Web App resource is actually created — `azd up` generates it, it's
-  not something we can hardcode in advance. So the backend should read its
-  allowed CORS origin from an environment variable (`FRONTEND_ORIGIN`)
-  rather than a hardcoded value in `config.py`, with `http://localhost:5173`
-  (Vite's default) as the fallback for local dev. After the first `azd up`,
-  grab the Static Web App's URL from the output and set it as the Container
-  App's `FRONTEND_ORIGIN` env var (`azd env set FRONTEND_ORIGIN <url>` +
-  redeploy, or wire it directly in the Bicep as an output-to-input reference
-  between the two resources so it's automatic on every `azd up`).
+  custom domain). ✅ Implemented exactly as speculated here: the backend's
+  Container App reads its CORS allowlist from `CLARITYGRID_CORS_ORIGINS`,
+  wired in Bicep as an output-to-input reference to the Static Web App's own
+  `defaultHostname` — automatic on every `azd provision`, no manual step.
 
-Nothing left open — this is ready for a Claude Code session to start on
-Phase 1.
+## 11. Gaps vs. this plan (as of 2026-09-14)
+
+Concrete, actionable items — roughly in order of how much they'd matter if
+this stopped being a prototype:
+
+1. **No database migrations.** `backend/scripts/seed_db.py` truncates and
+   reloads every table; there's no Alembic (or other) migration chain. Fine
+   today because all data is deterministically regenerated from `app/data/`,
+   but any hand-entered/user-generated data in Postgres would not survive a
+   schema change. Worth adding before this holds anything not reproducible
+   from the generators.
+2. **Postgres isn't in the IaC.** `infra/main.bicep` takes `databaseUrl` as
+   an opaque secure param; the actual Flexible Server (`claritygrid-pg-dev`)
+   was created by hand and lives in `rg-claritygrid-dev` alongside (but
+   outside) what `azd provision` manages. A fresh `azd up` in a new
+   environment would provision compute with no database to point it at.
+3. **No Key Vault.** `DATABASE_URL` is a Container Apps-native secret, not
+   Key Vault-backed. Acceptable at this scale/threat model, but a deviation
+   from §8's plan, and there's no path yet for a rotated/managed-identity-based
+   DB credential.
+4. ~~No observability beyond container logs.~~ **Closed** — Application
+   Insights (logging, distributed tracing, custom metrics via OpenTelemetry)
+   is implemented, see `app/observability.py` and
+   [`docs/OPS-0001-observability.md`](docs/OPS-0001-observability.md).
+5. **Frontend stack is far smaller than §6b planned.** No TypeScript, no
+   Tailwind (still inline styles), no shadcn/ui, no TanStack Query (plain
+   `useState`/`useEffect` + a hand-rolled `api()` fetch helper), no Framer
+   Motion. This was a deliberate scope call when connecting the UI (minimize
+   the diff from the working artifact rather than rewrite it), not an
+   oversight — but it means the "silent bugs from untyped JS" risk §6b called
+   out is still live, and the design-system work (Tailwind tokens, shadcn
+   primitives) hasn't happened.
+6. ~~No battery test coverage.~~ **Closed 2026-09-14.**
+   `backend/tests/test_battery.py` now covers: `find_shave_ceiling` respects
+   its capacity budget, the battery never increases a day's peak usage,
+   round-trip losses mean total annual usage with the battery is never lower
+   than without it, a flat tariff sees no benefit (and can't, structurally),
+   a demand tariff's demand charges go down, and the battery reduces
+   usage-weighted wholesale cost.
+7. **No auth**, as planned/accepted — listed here only so it's not mistaken
+   for an oversight. Fine for a prototype; would need real auth before any
+   real multi-tenant or public exposure.
+8. **8 of the real API's tariff basis types are now implemented** — the
+   original 4 (fixed/kwh/peak_kw/TOU) plus, as of 2026-09-14, index pricing
+   (`ndx`), feed-in credit (`feedin_rate`), and the two daily-reset bases
+   (`daily_kwh_tr`, `daily_peak_kw`/`daily_peak_kw_tr`) — see §6 and
+   `test_tariff_basis.py`. Deliberately still unimplemented: block-factor
+   tiering (`peak_kw_bf`, `billdmd_bf`, ...), ratchets
+   (`*_ratchet`), and coincident peak (`x_coincident_peak`, `dced`) — these
+   need either real ISO coincident-peak-hour data (which doesn't exist in
+   this synthetic dataset) or a firm decision on trailing-month semantics at
+   a single-year dataset's boundary, neither of which this session had
+   enough information to decide unilaterally.
+9. **CI/CD had a resource-group targeting bug**, now fixed: the workflow
+   never forwarded the `AZURE_RESOURCE_GROUP` repo variable to `azd`, so it
+   silently provisioned a second, duplicate resource group (`rg-dev`)
+   instead of the intended `rg-claritygrid-dev`. Fixed in
+   `.github/workflows/azure-dev.yml`; the stray `rg-dev` has been deleted.
+   Flagged here as a reminder that this class of drift (local `.azure/`
+   state vs. CI having no persisted state between jobs) is easy to
+   reintroduce if new azd outputs are added without threading them through
+   both the `provision` and `deploy` jobs.

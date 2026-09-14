@@ -35,10 +35,13 @@ class CompareRequest(BaseModel):
 
 class CalculateCustomEconomyRequest(BaseModel):
     usage_by_month: list[float] | None = Field(default_factory=list)
+    distributor_id: str | None = None
     distributor_tariff_id: str | None = None
     price_node_id: str | None = None
-    battery_duration: int | None = None
-    battery_id: str | None = None
+    # The real API types this as a string (e.g. "4", or "" for no battery) --
+    # see docs/08-analytics.md. int would reject "" with a validation error.
+    battery_duration: str | None = None
+    battery_id: str | int | None = None
     timezone: str | None = None
 
 
