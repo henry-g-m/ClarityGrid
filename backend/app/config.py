@@ -12,6 +12,8 @@ class Settings:
         origin.strip() for origin in os.getenv("CLARITYGRID_CORS_ORIGINS", "*").split(",") if origin.strip()
     ]
     database_url: str = os.getenv("DATABASE_URL", "")
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    applicationinsights_connection_string: str = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
 
 
 settings = Settings()
