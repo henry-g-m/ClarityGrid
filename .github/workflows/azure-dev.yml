@@ -2,14 +2,28 @@
 # Provisioning + deployment only run on push to main (i.e. after a PR merges) --
 # main is branch-protected to require a PR, so a "push to main" here means a
 # merge landed, not someone pushing directly.
+#
+# paths-ignore below: a change that touches only the presentation/ deck (or
+# its own Pages workflow) doesn't need a backend/infra test-and-deploy cycle,
+# so it's excluded here. Any push/PR that touches presentation/ *and*
+# anything else still runs normally, since paths-ignore only skips the
+# workflow when EVERY changed file matches the ignored patterns.
+
+name: UI and Backend test, provision and deployment
 on:
   workflow_dispatch:
   push:
     branches:
       - main
+    paths-ignore:
+      - "presentation/**"
+      - ".github/workflows/deploy-pages.yml"
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - "presentation/**"
+      - ".github/workflows/deploy-pages.yml"
 
 # Set up permissions for deploying with secretless Azure federated credentials
 # https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure?tabs=azure-portal%2Clinux#set-up-azure-login-with-openid-connect-authentication
