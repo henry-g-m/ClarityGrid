@@ -2,7 +2,7 @@ name: Deploy presentation to GitHub Pages
 
 on:
   push:
-    branches: [main,development]
+    branches: [main]
     paths:
       - "presentation/**"
       - ".github/workflows/deploy-pages.yml"
