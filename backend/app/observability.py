@@ -56,6 +56,8 @@ def configure_telemetry(app: FastAPI) -> None:
         configure_azure_monitor(
             connection_string=settings.applicationinsights_connection_string,
             resource=resource,
+            sampling_ratio=1.0,
+            enable_live_metrics=False,
         )
     else:
         logger.warning(
@@ -67,6 +69,15 @@ def configure_telemetry(app: FastAPI) -> None:
 
     FastAPIInstrumentor.instrument_app(app)
     PsycopgInstrumentor().instrument()
+
+    provider = trace.get_tracer_provider()
+    processors = getattr(getattr(provider, "_active_span_processor", None), "_span_processors", ())
+    logger.info(
+        "Telemetry configured: fastapi_instrumented=%s tracer_provider=%s span_processors=%d",
+        getattr(app, "_is_instrumented_by_opentelemetry", False),
+        type(provider).__name__,
+        len(processors),
+    )
 
 
 def get_meter() -> metrics.Meter:
