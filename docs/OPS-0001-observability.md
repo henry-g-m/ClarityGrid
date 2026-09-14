@@ -1,7 +1,7 @@
 # Backend Observability: Logging, Tracing & Metrics
 
-**Status:** Implemented, one open issue (see "Known issues" below)
-**Date:** 2026-09-13
+**Status:** Implemented and verified end-to-end (see "Known issues" for one remaining cleanup item)
+**Date:** 2026-09-13, updated 2026-09-14
 **Scope:** `backend/` only — the frontend has no observability instrumentation.
 
 This is an internal reference doc for this project's own backend service,
@@ -75,8 +75,12 @@ automatically.
   the psycopg v3 driver, creating one `CLIENT` span per DB query.
 - **Sampling**: pinned to 100% (`sampling_ratio=1.0`), passed explicitly to
   `configure_azure_monitor()`.
-- **Live Metrics**: currently disabled (`enable_live_metrics=False`) — see
-  "Known issues".
+- **Live Metrics**: disabled (`enable_live_metrics=False`). This is the
+  fix for the `AppRequests` issue below (`sampling_ratio=1.0` was already
+  the default, so disabling Live Metrics is what actually changed
+  behavior) — it's off deliberately, not a leftover debugging step.
+  Re-enabling it would need to be re-verified against `AppRequests`
+  before shipping.
 - **Local dev** (no connection string): spans are still created with real,
   valid trace/span ids (so the logging correlation above still works), but
   there's no processor/exporter attached, so nothing is sent anywhere.
@@ -128,27 +132,36 @@ az monitor log-analytics query -w <workspace-customer-id> \
 
 ## Known issues
 
-1. **`AppRequests` was empty despite confirmed live traffic** (found
-   2026-09-13, right after first deploying this). `AppTraces`,
-   `AppDependencies`, and `AppMetrics` all confirmed flowing correctly;
-   only the incoming-request spans weren't landing. Root cause wasn't
-   pinned down with certainty (couldn't get container shell access to
-   inspect live state), but Live Metrics / dynamic configuration was the
-   one part of the trace pipeline not shared with the working
-   logs/metrics pipelines. [PR #5](https://github.com/henry-g-m/ClarityGrid/pull/5)
-   disables it, pins the sampler, and adds a startup log line
-   (`Telemetry configured: fastapi_instrumented=... span_processors=...`)
-   to confirm instrumentation state directly from container logs on the
-   next deploy. **Verify after merging**: check for that log line, then
-   re-run the `AppRequests | count` query above.
-2. **`AppTraces` noise**: exporting the root logger means Azure SDK's own
-   internal HTTP client logging (`azure.core.pipeline.policies.http_logging_policy`)
-   gets shipped to Application Insights alongside real application logs.
-   Worth raising that specific logger's level (e.g. `WARNING`) once the
-   above is resolved, so it doesn't drown out real `app.request` lines.
-3. **Unrelated, found during this investigation**: intermittent
-   `error connecting in 'pool-1': connection timeout expired` from the
-   psycopg connection pool (`app/db.py`), causing occasional 500s on
-   `/api/bill` and `/api/locations` under load. Not caused by the
-   observability work — flagged here because it surfaced while reading
-   the same container logs.
+1. ~~**`AppRequests` was empty despite confirmed live traffic**~~ —
+   **Resolved and verified 2026-09-14.** `AppTraces`, `AppDependencies`,
+   and `AppMetrics` were flowing correctly the whole time; only the
+   incoming-request spans weren't landing. [PR #5](https://github.com/henry-g-m/ClarityGrid/pull/5)
+   (merged) disabled Live Metrics and pinned the sampler. After it
+   deployed:
+   - The new startup log line confirmed instrumentation was wired
+     correctly: `Telemetry configured: fastapi_instrumented=True
+     tracer_provider=TracerProvider span_processors=3`.
+   - A marker request (`GET /health?probe=verify-apprequests-fix`) sent
+     straight to the deployed backend showed up in `AppRequests` within
+     seconds, with matching URL, status code, and duration — confirming
+     Live Metrics was the actual cause, not a sampling or logging
+     interaction. All four telemetry types (`AppRequests`,
+     `AppDependencies`, `AppTraces`, `AppMetrics`) are now confirmed
+     flowing end-to-end.
+   - Root cause is scoped to "disabling Live Metrics fixes it" rather
+     than "here's the exact line in the Azure Monitor distro that was
+     dropping SERVER spans" — that deeper why wasn't pinned down (no
+     container shell access to inspect live state), so treat Live
+     Metrics as the known trigger, not a fully explained mechanism.
+2. **`AppTraces` noise** (still open): exporting the root logger means
+   Azure SDK's own internal HTTP client logging
+   (`azure.core.pipeline.policies.http_logging_policy`) gets shipped to
+   Application Insights alongside real application logs. Worth raising
+   that specific logger's level (e.g. `WARNING`) so it doesn't drown out
+   real `app.request` lines.
+3. **Unrelated, found during this investigation** (still open):
+   intermittent `error connecting in 'pool-1': connection timeout
+   expired` from the psycopg connection pool (`app/db.py`), causing
+   occasional 500s on `/api/bill` and `/api/locations` under load. Not
+   caused by the observability work — flagged here because it surfaced
+   while reading the same container logs.
