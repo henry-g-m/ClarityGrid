@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from app import repositories
 from app.data.iso_profiles import ISO_PROFILES
 from app.models.schemas import CalculateCustomEconomyRequest
+from app.observability import get_meter
 from app.services.battery import simulate_battery
 from app.services.calc_engine import calculate_bill
 from app.services.prices import CAL
@@ -17,6 +18,11 @@ _DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 # `availableBatteries` / ancillary-service fields have no data source here) --
 # "auto-select by duration" always resolves to this one representative unit.
 _DEFAULT_BATTERY_POWER_KW = 15.0
+
+_ecservice_calculations_counter = get_meter().create_counter(
+    "claritygrid.ecservice_calculations",
+    description="Number of /ecservice/calculate_custom_economy calls, by distributor tariff",
+)
 
 
 @router.post("/ecservice/login")
@@ -106,6 +112,7 @@ async def calculate_custom_economy(payload: CalculateCustomEconomyRequest):
         )
     if payload.distributor_tariff_id is None:
         raise HTTPException(status_code=400, detail="distributor_tariff_id is required")
+    _ecservice_calculations_counter.add(1, {"distributor_tariff_id": payload.distributor_tariff_id})
 
     location = repositories.get_location(payload.distributor_id)
     if location is None:

@@ -321,7 +321,7 @@ choice, not an Azure limitation, and remains the right one at this scale.
 | Database | Azure Database for PostgreSQL Flexible Server, Burstable (B1ms) | ⚠️ done, but **not in this IaC** | The Postgres server (`claritygrid-pg-dev`) lives in the same resource group (`rg-claritygrid-dev`) but was provisioned outside `infra/main.bicep` — `databaseUrl` is passed in as a secure param/GitHub secret, not created by this template. See §11. |
 | Container registry | Azure Container Registry | ✅ done | `containerRegistry`, Basic SKU |
 | Secrets | Azure Key Vault | ❌ not built | `DATABASE_URL` is a plain Container Apps secret (`secrets: [{name: 'database-url', ...}]`), not Key Vault-backed. Works, but not what was planned. See §11. |
-| Observability | Application Insights (Azure Monitor OpenTelemetry) | ❌ not built | Only a Log Analytics workspace exists, wired to the Container Apps environment for container stdout/stderr logs — no App Insights resource, no request tracing/OpenTelemetry. See §11. |
+| Observability | Application Insights (Azure Monitor OpenTelemetry) | ✅ done, see [`docs/OPS-0001-observability.md`](docs/OPS-0001-observability.md) | Logging, distributed tracing, and metrics (`app/observability.py`), exported to a workspace-based Application Insights resource `infra/main.bicep` provisions on the same Log Analytics workspace the Container Apps environment already uses. |
 | Provisioning & CI/CD | Azure Developer CLI (`azd`) + GitHub Actions | ✅ done | `.github/workflows/azure-dev.yml`: test (pytest + frontend build) → provision → deploy (manually-approved `dev` environment gate), on push to `main` |
 
 **Region: East US 2** (this plan previously contradicted itself — §8 said
@@ -393,10 +393,10 @@ this stopped being a prototype:
    Key Vault-backed. Acceptable at this scale/threat model, but a deviation
    from §8's plan, and there's no path yet for a rotated/managed-identity-based
    DB credential.
-4. **No observability beyond container logs.** Only a Log Analytics
-   workspace for stdout/stderr exists — no Application Insights, no request
-   tracing, no OpenTelemetry. Debugging a production issue today means
-   reading raw container logs.
+4. ~~No observability beyond container logs.~~ **Closed** — Application
+   Insights (logging, distributed tracing, custom metrics via OpenTelemetry)
+   is implemented, see `app/observability.py` and
+   [`docs/OPS-0001-observability.md`](docs/OPS-0001-observability.md).
 5. **Frontend stack is far smaller than §6b planned.** No TypeScript, no
    Tailwind (still inline styles), no shadcn/ui, no TanStack Query (plain
    `useState`/`useEffect` + a hand-rolled `api()` fetch helper), no Framer
