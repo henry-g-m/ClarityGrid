@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from app.data.tariffs import build_tariffs
 from app.models.domain import ChargeTier, Location, Tariff
+from app.observability import get_meter
 from app.services.prices import CAL
+
+_bill_calculations_counter = get_meter().create_counter(
+    "claritygrid.bill_calculations",
+    description="Number of bills calculated, by tariff",
+)
 
 
 def evaluate_tiered_range(range_values: list[ChargeTier], x: float) -> float:
@@ -14,6 +20,7 @@ def evaluate_tiered_range(range_values: list[ChargeTier], x: float) -> float:
 
 
 def calculate_bill(tariff: Tariff, usage_arr: list[float], price_arr: list[float]) -> dict:
+    _bill_calculations_counter.add(1, {"tariff_id": tariff.id})
     monthly = [
         {"customer": 0.0, "energy": 0.0, "demand": 0.0, "total": 0.0, "wholesale": 0.0, "usage_kwh": 0.0, "peak_kw": 0.0}
         for _ in range(12)

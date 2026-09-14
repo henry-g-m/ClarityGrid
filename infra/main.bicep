@@ -30,6 +30,18 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   }
 }
 
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: 'appi-claritygrid-${environmentName}'
+  location: location
+  tags: tags
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: logAnalytics.id
+    IngestionMode: 'LogAnalytics'
+  }
+}
+
 resource containerAppsEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: 'cae-claritygrid-${environmentName}'
   location: location
@@ -106,6 +118,10 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'database-url'
           value: databaseUrl
         }
+        {
+          name: 'appinsights-connection-string'
+          value: appInsights.properties.ConnectionString
+        }
       ]
     }
     template: {
@@ -135,6 +151,10 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'CLARITYGRID_ENVIRONMENT'
               value: 'production'
             }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              secretRef: 'appinsights-connection-string'
+            }
           ]
         }
       ]
@@ -150,4 +170,5 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.properties.ConnectionString
 output BACKEND_URL string = 'https://${backendApp.properties.configuration.ingress.fqdn}'
