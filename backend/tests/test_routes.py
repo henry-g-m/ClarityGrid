@@ -37,3 +37,16 @@ def test_real_api_operator_route(client):
     assert response.status_code == 200
     body = response.json()
     assert len(body["operators"]) == 7
+
+
+def test_real_api_calculate_custom_economy_route(client):
+    payload = {"distributor_tariff_id": "nyc-standard", "usage_by_month": [3000.0] * 12}
+    response = client.post("/ecservice/calculate_custom_economy", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["annualRetailCost"] > 0
+
+
+def test_real_api_calculate_custom_economy_requires_tariff_id(client):
+    response = client.post("/ecservice/calculate_custom_economy", json={})
+    assert response.status_code == 400

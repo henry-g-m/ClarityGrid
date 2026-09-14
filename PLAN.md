@@ -258,7 +258,7 @@ well-trodden path, not a bespoke setup).
 | Database | **Azure Database for PostgreSQL – Flexible Server**, Burstable tier (B1ms) | Managed, cheap at prototype scale, standard Postgres as decided above. |
 | Container registry | Azure Container Registry | Holds the built FastAPI Docker image that Container Apps pulls from. |
 | Secrets | Azure Key Vault | DB connection string and any future API keys, referenced by the container app instead of sitting in plain env vars. |
-| Observability | Application Insights (via Azure Monitor OpenTelemetry) | Request tracing and logs from day one — cheap to add now, annoying to retrofit later. |
+| Observability | Application Insights (via Azure Monitor OpenTelemetry) — **implemented**, see [`docs/OPS-0001-observability.md`](docs/OPS-0001-observability.md) | Logging, distributed tracing, and metrics, exported to a workspace-based Application Insights resource on the same Log Analytics workspace the Container Apps environment already provisions. |
 | Provisioning & CI/CD | **Azure Developer CLI (`azd`)** + GitHub Actions | `azd` is built for exactly this "prototype in a repo → deployed on Azure" flow: `azd init`, `azd up` provisions everything via Bicep and deploys the code in one command, and `azd pipeline config` wires up GitHub Actions for you. This is also a good fit for a Claude-Code-driven workflow since the infra is declarative (Bicep in `infra/`) rather than manual portal clicks. |
 | Frontend hosting (Phase 2, not now) | Azure Static Web Apps | Once the UI moves out of the artifact into its own app, this is the natural pairing — static hosting + CDN, easy custom domain, separate from the API. |
 

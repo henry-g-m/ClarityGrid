@@ -96,11 +96,19 @@ automatically.
   shared by `POST /api/bill`, `POST /api/compare`, and
   `GET /api/locations/{id}/tariffs` — all three surface it without their
   own instrumentation.
+- **Custom metric** — `claritygrid.ecservice_calculations`: a counter,
+  tagged by `distributor_tariff_id`, incremented once per
+  `POST /ecservice/calculate_custom_economy` call. Lives directly in
+  `app/routers/real_api.py` (that endpoint is the only `/ecservice/*` route
+  with real request-body-derived business meaning — the others are static
+  or DB-lookup reads already covered by the generic HTTP-request metric).
 - **Performance counters**: Azure Monitor's distro also emits process-level
   counters (CPU, memory) by default whenever a connection string is set.
-- **Not instrumented**: the `/ecservice/*` mirror endpoints in
-  `routers/real_api.py` have no custom business metrics — only the generic
-  HTTP-request metric above.
+- **Read-only `/ecservice/*` routes** (`login`, `operators`, `distributor`,
+  `distributors`, `distributors/tariffs`): no custom business metric, same
+  as their `/api/*` read-route counterparts — only the generic
+  HTTP-request metric (and, for the DB-backed ones, the `psycopg`
+  dependency spans) above.
 
 ## Querying the data
 
@@ -164,4 +172,6 @@ az monitor log-analytics query -w <workspace-customer-id> \
    expired` from the psycopg connection pool (`app/db.py`), causing
    occasional 500s on `/api/bill` and `/api/locations` under load. Not
    caused by the observability work — flagged here because it surfaced
-   while reading the same container logs.
+   while reading the same container logs. See
+   [`OPS-0002-stress-testing.md`](OPS-0002-stress-testing.md) for the plan
+   to reproduce this deliberately instead of waiting for it in production.

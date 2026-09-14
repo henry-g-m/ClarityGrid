@@ -5,8 +5,14 @@ from fastapi import APIRouter, HTTPException
 from app import repositories
 from app.data.iso_profiles import ISO_PROFILES
 from app.models.schemas import CalculateCustomEconomyRequest
+from app.observability import get_meter
 
 router = APIRouter()
+
+_ecservice_calculations_counter = get_meter().create_counter(
+    "claritygrid.ecservice_calculations",
+    description="Number of /ecservice/calculate_custom_economy calls, by distributor tariff",
+)
 
 
 @router.post("/ecservice/login")
@@ -71,6 +77,7 @@ async def get_distributor_tariffs(id: str | None = None):
 async def calculate_custom_economy(payload: CalculateCustomEconomyRequest):
     if payload.distributor_tariff_id is None:
         raise HTTPException(status_code=400, detail="distributor_tariff_id is required")
+    _ecservice_calculations_counter.add(1, {"distributor_tariff_id": payload.distributor_tariff_id})
     usage = payload.usage_by_month or [3000.0] * 12
     total_usage = sum(float(x) for x in usage)
     monthly_total = float(total_usage) * 0.14

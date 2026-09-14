@@ -7,13 +7,15 @@ a battery peak-shaving simulator. Ported from the React artifact in
 
 See [`PLAN.md`](PLAN.md) for the full architecture and phased plan, and
 [`docs/`](docs/) for the Clarity Grid Solutions API reference this project's
-route shapes are modeled on.
+route shapes are modeled on, plus this project's own operational docs (e.g.
+[observability](docs/OPS-0001-observability.md) and
+[stress-testing plan](docs/OPS-0002-stress-testing.md)).
 
 ## Project layout
 
 ```
 backend/       FastAPI app, calc engine, DB schema + seed script (see below)
-docs/          Clarity Grid Solutions API documentation (reference, not code)
+docs/          Clarity Grid Solutions API reference, plus this project's ADRs/ops docs
 ui_prototype/  React client UI — talks to the backend's /api/* routes over HTTP
 ```
 
@@ -61,6 +63,10 @@ DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<db>?sslmode=require
 
 `app/config.py` loads this via `python-dotenv` on import. Without it,
 `init_pool()` raises `RuntimeError: DATABASE_URL is not set` at startup.
+
+`backend/.env.example` also documents two optional observability env vars
+(`APPLICATIONINSIGHTS_CONNECTION_STRING`, `LOG_LEVEL`) — leave both unset for
+local dev; see [`docs/OPS-0001-observability.md`](docs/OPS-0001-observability.md).
 
 ### Schema + synthetic data
 
@@ -174,11 +180,24 @@ or `azd deploy frontend` / `azd deploy backend` for just one.
   so only the deployed frontend's origin can call `/api/*` and `/ecservice/*`
   from a browser. This is provisioning-time wiring — no manual step needed.
 - **API base URL**: Vite inlines env vars into the built JS at build time, so
-  the frontend needs to know the backend's URL *before* `npm run build` runs.
-  A `prebuild` hook (`ui_prototype/write-build-env.mjs`, wired in `azure.yaml`)
-  writes `VITE_API_BASE_URL=$BACKEND_URL` to `.env.production.local` — `$BACKEND_URL`
-  comes from the backend's Bicep output, which `azd` exposes as an env var to
-  hooks automatically.
+  the frontend needs to know the backend's URL *before* Vite builds. npm's own
+  `build` script (`ui_prototype/package.json`) runs `write-build-env.mjs`
+  first, which writes `VITE_API_BASE_URL=$BACKEND_URL` to
+  `.env.production.local` — `$BACKEND_URL` comes from the backend's Bicep
+  output, forwarded through as an env var by whatever invokes `npm run build`
+  (CI, or `azd deploy` locally). This used to be an `azd` `prebuild` hook, but
+  that hook never actually ran for this staticwebapp-hosted service during
+  `azd deploy` — silently, no error — so the deployed bundle always shipped
+  with its `http://localhost:8000` fallback baked in and every request from a
+  real visitor's browser went to their own machine instead of Azure. Folding
+  it into npm's `build` script guarantees it runs.
+- **Observability**: the backend ships with logging, distributed tracing, and
+  metrics via OpenTelemetry (see `backend/app/observability.py`), exported to
+  a workspace-based Application Insights resource that `infra/main.bicep`
+  provisions on the same Log Analytics workspace used for container console
+  logs — no manual wiring needed after `azd provision`/`azd up`. Full
+  reference, including what's instrumented and how to query it:
+  [`docs/OPS-0001-observability.md`](docs/OPS-0001-observability.md).
 
 ### CI/CD
 
