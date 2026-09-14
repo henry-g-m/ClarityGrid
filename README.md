@@ -8,7 +8,8 @@ a battery peak-shaving simulator. Ported from the React artifact in
 See [`PLAN.md`](PLAN.md) for the full architecture and phased plan, and
 [`docs/`](docs/) for the Clarity Grid Solutions API reference this project's
 route shapes are modeled on, plus this project's own operational docs (e.g.
-observability).
+[observability](docs/OPS-0001-observability.md) and
+[stress-testing plan](docs/OPS-0002-stress-testing.md)).
 
 ## Project layout
 
