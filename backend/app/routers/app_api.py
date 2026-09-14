@@ -7,7 +7,8 @@ from fastapi import APIRouter, HTTPException
 from app import repositories
 from app.data.building_profiles import BUILDING_SHAPES
 from app.models.schemas import BillRequest, CompareRequest
-from app.services.calc_engine import calculate_bill
+from app.services.battery import simulate_battery
+from app.services.calc_engine import calculate_bill, fixed_price_bill
 from app.services.cache import get_or_generate_usage
 
 router = APIRouter()
@@ -74,14 +75,26 @@ async def calculate_bill_endpoint(payload: BillRequest):
     tariff = repositories.get_tariff(payload.location_id, payload.tariff_id) or tariffs[0]
     usage = _usage_for(location.id, payload.building_type, payload.monthly_kwh)
     prices = repositories.get_price_series(location.id)
-    result = calculate_bill(tariff, usage, prices)
-    return {
+
+    billed_usage = usage
+    if payload.battery:
+        power_kw = float(payload.battery.get("power_kw") or 0)
+        duration_hr = float(payload.battery.get("duration_hr") or 0)
+        if power_kw > 0 and duration_hr > 0:
+            billed_usage = simulate_battery(usage, prices, power_kw, duration_hr)
+
+    result = calculate_bill(tariff, billed_usage, prices)
+    response = {
         "location": {"id": location.id, "city": location.city, "state": location.state},
         "tariff": {"id": tariff.id, "name": tariff.name},
         "usage": usage,
+        "billed_usage": billed_usage,
         "prices": prices,
         "bill": result,
     }
+    if payload.fixed_rate is not None:
+        response["fixed_bill"] = fixed_price_bill(billed_usage, payload.fixed_rate / 100, 10)
+    return response
 
 
 @router.post("/api/compare")

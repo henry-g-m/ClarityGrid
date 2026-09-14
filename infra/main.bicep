@@ -73,6 +73,22 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
+// Static Web Apps is only available in a handful of regions (centralus, eastus2,
+// westus2, westeurope, eastasia) -- this project's region (see PLAN.md) is eastus2,
+// which supports it, so we reuse `location` rather than adding a second param.
+resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
+  name: 'stapp-claritygrid-${environmentName}'
+  location: location
+  tags: union(tags, {
+    'azd-service-name': 'frontend'
+  })
+  sku: {
+    name: 'Free'
+    tier: 'Free'
+  }
+  properties: {}
+}
+
 resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'ca-claritygrid-backend'
   location: location
@@ -123,9 +139,8 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
               secretRef: 'database-url'
             }
             {
-              // TODO(phase2): replace with the real frontend origin once the UI is deployed
               name: 'CLARITYGRID_CORS_ORIGINS'
-              value: '*'
+              value: 'https://${staticWebApp.properties.defaultHostname}'
             }
             {
               name: 'CLARITYGRID_APP_NAME'
@@ -151,3 +166,4 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
 
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
 output BACKEND_URL string = 'https://${backendApp.properties.configuration.ingress.fqdn}'
+output FRONTEND_URL string = 'https://${staticWebApp.properties.defaultHostname}'

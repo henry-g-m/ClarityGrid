@@ -35,12 +35,24 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend
+        working-directory: ui_prototype
+        run: |
+          npm ci
+          npm run build
+
   provision:
     if: github.event_name == 'push'
     needs: test
     runs-on: ubuntu-latest
     outputs:
       acr_endpoint: ${{ steps.provision.outputs.acr_endpoint }}
+      backend_url: ${{ steps.provision.outputs.backend_url }}
     env:
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
@@ -67,6 +79,7 @@ jobs:
         run: |
           azd provision --no-prompt
           echo "acr_endpoint=$(azd env get-value AZURE_CONTAINER_REGISTRY_ENDPOINT)" >> "$GITHUB_OUTPUT"
+          echo "backend_url=$(azd env get-value BACKEND_URL)" >> "$GITHUB_OUTPUT"
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
@@ -101,3 +114,4 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           AZURE_CONTAINER_REGISTRY_ENDPOINT: ${{ needs.provision.outputs.acr_endpoint }}
+          BACKEND_URL: ${{ needs.provision.outputs.backend_url }}
