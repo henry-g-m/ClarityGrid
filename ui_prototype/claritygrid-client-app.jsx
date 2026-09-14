@@ -13,7 +13,9 @@ import { Zap, BatteryCharging, MapPin, TrendingDown, TrendingUp, Building2, Gaug
    ========================================================================== */
 
 const API_BASE =
-  (typeof window !== "undefined" && window.__CLARITYGRID_API_BASE__) || "http://localhost:8000";
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" && window.__CLARITYGRID_API_BASE__) ||
+  "http://localhost:8000";
 
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {

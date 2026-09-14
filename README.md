@@ -129,7 +129,63 @@ If the backend isn't reachable, the page shows a "Could not reach the
 backend at http://localhost:8000" error instead of the loading map — start
 or fix the backend and reload.
 
-To point the UI at a different backend (e.g. a deployed instance), set
-`window.__CLARITYGRID_API_BASE__` before the app mounts — e.g. add
-`<script>window.__CLARITYGRID_API_BASE__ = "https://your-backend-host";</script>`
-to `ui_prototype/index.html` above the `main.jsx` script tag.
+To point the local dev server at a different backend, set `VITE_API_BASE_URL`
+(e.g. in `ui_prototype/.env.local`) or, for a quick one-off override without
+rebuilding, set `window.__CLARITYGRID_API_BASE__` before the app mounts. The
+app checks `VITE_API_BASE_URL` first, then the `window` global, then falls
+back to `http://localhost:8000`.
+
+## Deploying to Azure
+
+This repo is an [`azd`](https://learn.microsoft.com/azure/developer/azure-developer-cli/)
+project (`azure.yaml` + `infra/main.bicep`) with two services:
+
+| Service | Azure resource | What it is |
+|---|---|---|
+| `backend` | Container App | The FastAPI app from `backend/` (Docker) |
+| `frontend` | Static Web App | The Vite build of `ui_prototype/` |
+
+### One-time setup
+
+```bash
+azd auth login
+azd env new dev        # or `azd env select dev` if it already exists
+azd env set DATABASE_URL "postgresql://<user>:<password>@<host>:5432/<db>?sslmode=require"
+```
+
+### Provision + deploy
+
+```bash
+azd up
+```
+
+This provisions both resources (Log Analytics, Container Apps environment,
+ACR, the backend Container App, and the Static Web App) and deploys both
+services. After it finishes, `azd env get-values` will show `BACKEND_URL`
+and `FRONTEND_URL` — open `FRONTEND_URL` in a browser to use the deployed UI.
+
+To redeploy code without re-provisioning infra: `azd deploy` (both services)
+or `azd deploy frontend` / `azd deploy backend` for just one.
+
+### How the pieces are wired together
+
+- **CORS**: the backend's `CLARITYGRID_CORS_ORIGINS` env var is set in Bicep
+  to the Static Web App's own URL (`https://${staticWebApp.properties.defaultHostname}`),
+  so only the deployed frontend's origin can call `/api/*` and `/ecservice/*`
+  from a browser. This is provisioning-time wiring — no manual step needed.
+- **API base URL**: Vite inlines env vars into the built JS at build time, so
+  the frontend needs to know the backend's URL *before* `npm run build` runs.
+  A `prebuild` hook (`ui_prototype/write-build-env.mjs`, wired in `azure.yaml`)
+  writes `VITE_API_BASE_URL=$BACKEND_URL` to `.env.production.local` — `$BACKEND_URL`
+  comes from the backend's Bicep output, which `azd` exposes as an env var to
+  hooks automatically.
+
+### CI/CD
+
+`.github/workflows/azure-dev.yml` builds and tests both services on every
+push/PR to `main`, then (push to `main` only) runs `azd provision` and
+`azd deploy` for both. The `provision` job explicitly forwards `BACKEND_URL`
+to the `deploy` job (each GitHub Actions job is a fresh checkout with no
+local `azd` environment state, so outputs from `azd provision` don't
+automatically carry over — see the existing `acr_endpoint` handling in that
+workflow for the same pattern).

@@ -7,3 +7,4 @@ __pycache__/
 .azure/
 node_modules/
 ui_prototype/dist/
+ui_prototype/.env*.local

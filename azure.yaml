@@ -2,7 +2,7 @@
 
 name: claritygrid
 metadata:
-  template: claritygrid-backend@0.1.0
+  template: claritygrid@0.1.0
 
 services:
   backend:
@@ -12,3 +12,16 @@ services:
     docker:
       path: ./Dockerfile
       context: .
+
+  frontend:
+    project: ./ui_prototype
+    language: js
+    host: staticwebapp
+    dist: dist
+    hooks:
+      # Vite inlines env vars into the built bundle at build time, so the
+      # backend's URL (a Bicep output, exposed to hooks as $BACKEND_URL) has
+      # to land in an .env file before `npm run build` runs.
+      prebuild:
+        shell: sh
+        run: node write-build-env.mjs
