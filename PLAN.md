@@ -206,6 +206,24 @@ locations/tariffs, these were never moved into Postgres — see §11).
 | `GET /ecservice/api/distributors/tariffs?id=` | Distributor Tariffs (detailed) | full charge structure, matches `02-tariff-api.md` shape |
 | `POST /ecservice/calculate_custom_economy` | Calculate Custom Economy | accepts the real payload shape (`usage_by_month`, `distributor_tariff_id`, `price_node_id`, `battery_duration`, `battery_id`, etc.), returns the real response shape (`retailMonthlyCosts`, `wholesaleMonthlyCosts`, etc.) |
 
+`calculate_custom_economy` was a flat-rate stub (`sum(usage) * 0.14`, ignoring
+the tariff entirely) until 2026-09-14, when it was wired to the real
+`repositories.get_tariff` + `calc_engine.calculate_bill` +
+`battery.simulate_battery` — same engine `/api/bill` uses. Two real
+deviations from the documented real-API shape, both explicit in the
+response's `warning` field:
+- **`distributor_id` is required**, unlike the real API (where it's
+  documented as "not required") — this prototype's tariff ids (`standard`,
+  `tou`, `demand`) aren't globally unique the way the real API's numeric
+  tariff-detail ids are, so the distributor is needed to know which
+  location's tariff to resolve.
+- **No per-node battery catalog** — `battery_id`/"auto-select by duration"
+  always resolves to one fixed 15kW representative unit, since there's no
+  `availableBatteries` data source here. Distribution and Energy charges are
+  also merged into one (matching this prototype's simplified 3-category
+  tariff model, not the real API's 4), so `retailMonthlyDistributionCosts`/
+  `distributionChargeBasis` are always zero/empty.
+
 A Postman collection with sample requests against all of these lives at
 `backend/postman/ClarityGrid_RealAPI.postman_collection.json`.
 

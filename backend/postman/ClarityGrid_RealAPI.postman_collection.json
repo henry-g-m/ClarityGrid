@@ -134,7 +134,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n  \"usage_by_month\": [3200, 3100, 3400, 3600, 4000, 4500, 4800, 4700, 4200, 3700, 3300, 3200],\n  \"distributor_tariff_id\": \"standard\",\n  \"price_node_id\": null,\n  \"battery_duration\": null,\n  \"battery_id\": null,\n  \"timezone\": \"America/New_York\"\n}",
+					"raw": "{\n  \"usage_by_month\": [3200, 3100, 3400, 3600, 4000, 4500, 4800, 4700, 4200, 3700, 3300, 3200],\n  \"distributor_id\": \"{{distributor_id}}\",\n  \"distributor_tariff_id\": \"standard\",\n  \"price_node_id\": null,\n  \"battery_duration\": \"4\",\n  \"battery_id\": 0,\n  \"timezone\": \"America/New_York\"\n}",
 					"options": {
 						"raw": { "language": "json" }
 					}
