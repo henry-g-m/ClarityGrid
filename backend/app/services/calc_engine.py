@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from app.data.tariffs import build_tariffs
 from app.models.domain import Charge, ChargeTier, Location, Tariff
+from app.observability import get_meter
 from app.services.prices import CAL
 
 # Demand bases where the peak (and thus the charge) is measured per-day and
 # summed over the month, instead of once against the month's single highest
 # peak. See docs/05-basis-reference.md #3 (`daily_peak_kw` / `daily_peak_kw_tr`).
 DAILY_DEMAND_BASES = {"daily_peak_kw", "daily_peak_kw_tr"}
+
+_bill_calculations_counter = get_meter().create_counter(
+    "claritygrid.bill_calculations",
+    description="Number of bills calculated, by tariff",
+)
 
 
 def evaluate_tiered_range(range_values: list[ChargeTier], x: float) -> float:
@@ -33,6 +39,7 @@ def _energy_charge_for_hour(line: Charge, usage: float, price: float, month_usag
 
 
 def calculate_bill(tariff: Tariff, usage_arr: list[float], price_arr: list[float]) -> dict:
+    _bill_calculations_counter.add(1, {"tariff_id": tariff.id})
     monthly = [
         {"customer": 0.0, "energy": 0.0, "demand": 0.0, "total": 0.0, "wholesale": 0.0, "usage_kwh": 0.0, "peak_kw": 0.0}
         for _ in range(12)

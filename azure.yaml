@@ -18,10 +18,12 @@ services:
     language: js
     host: staticwebapp
     dist: dist
-    hooks:
-      # Vite inlines env vars into the built bundle at build time, so the
-      # backend's URL (a Bicep output, exposed to hooks as $BACKEND_URL) has
-      # to land in an .env file before `npm run build` runs.
-      prebuild:
-        shell: sh
-        run: node write-build-env.mjs
+    # Vite inlines env vars into the built bundle at build time, so the
+    # backend's URL (a Bicep output, passed through as $BACKEND_URL) has to
+    # land in an .env file before Vite builds. This used to be a `prebuild`
+    # azd hook, but that hook never actually ran for this staticwebapp-hosted
+    # service during `azd deploy` (silently -- no error, no output), so the
+    # bundle always shipped with its localhost fallback baked in. Running it
+    # as the first step of npm's own "build" script (see ui_prototype/package.json)
+    # guarantees it runs whenever anything invokes `npm run build`, azd hook
+    # timing notwithstanding.
