@@ -8,3 +8,4 @@ __pycache__/
 node_modules/
 ui_prototype/dist/
 ui_prototype/.env*.local
+/Claude outputs/
